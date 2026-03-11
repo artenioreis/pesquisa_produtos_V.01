@@ -1,279 +1,154 @@
-import os
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import pyodbc
-import pandas as pd
-import numpy as np
-from flask import Flask, render_template, jsonify
-from datetime import datetime, date
+import json
+import os
+from datetime import datetime, timedelta
+import traceback
 
 app = Flask(__name__)
+app.secret_key = 'chave_seguranca_logistica'
 
-# =====================================================
-# CONFIGURAÇÕES E CONEXÃO
-# =====================================================
-def conectar_sql_server():
-    """Estabelece conexão com o SQL Server"""
+CONFIG_FILE = 'config.json'
+
+def carregar_config():
     try:
-        conn_str = (
-            "DRIVER={ODBC Driver 17 for SQL Server};"
-            f"SERVER={os.getenv('DB_SERVER', 'localhost')};"
-            f"DATABASE={os.getenv('DB_NAME', 'DMD')};"
-            f"UID={os.getenv('DB_USER', 'sa')};"
-            f"PWD={os.getenv('DB_PASSWORD', 'arte171721')}"
-        )
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+    except:
+        return {}
+
+def conectar_banco():
+    config = carregar_config()
+    if 'database' not in config: return None
+    db = config['database']
+    try:
+        conn_str = (f"DRIVER={{SQL Server}};SERVER={db['server']};"
+                    f"DATABASE={db['database']};UID={db['username']};PWD={db['password']}")
         return pyodbc.connect(conn_str)
-    except Exception as e:
-        print(f"Erro fatal na conexão SQL: {e}")
+    except:
         return None
 
-def json_safe(value):
-    """Converte tipos numpy/pandas/data para tipos nativos Python seguros para JSON"""
-    if value is None or pd.isna(value):
-        return None
-    if isinstance(value, (np.integer, int)):
-        return int(value)
-    if isinstance(value, (np.floating, float)):
-        return float(value)
-    if isinstance(value, (datetime, date)):
-        return value.strftime('%d/%m/%Y')
-    return str(value).strip()
-
-# =====================================================
-# MOTOR DE ANÁLISE DE CRÉDITO
-# =====================================================
-def calcular_risco_cliente(row):
-    """
-    Calcula score e gera análise baseada nas colunas da tabela clien.
-    Score Base: 1000 pontos.
-    """
-    score = 1000
-    sugestoes = []
-    tendencias = []
-    
-    # Extração e normalização de dados
-    limite = float(row.get('Limite_Credito') or 0)
-    debito = float(row.get('Total_Debito') or 0)
-    atraso_atual = int(row.get('Atraso_Atual') or 0)
-    maior_atraso = int(row.get('Maior_Atraso') or 0)
-    bloqueado = int(row.get('Bloqueado') or 0)
-    data_cadastro = row.get('Data_Cadastro')
-    renda_presumida = float(row.get('Vlr_LimCreAnt') or 0) # Exemplo de uso de campo histórico
-
-    # 1. Fator Bloqueio
-    if bloqueado == 1:
-        score = 0
-        motivo = row.get('Motivo_Bloqueio') or "Não especificado"
-        sugestoes.append(f"CRÍTICO: Cliente bloqueado no sistema. Motivo: {motivo}")
-        return 0, "risco-muito-alto", "Bloqueado", sugestoes, ["Cliente inativo para crédito"]
-
-    # 2. Fator Atraso Atual (Peso Alto)
-    if atraso_atual > 0:
-        penalidade = atraso_atual * 10
-        score -= penalidade
-        tendencias.append(f"Inadimplência ativa: {atraso_atual} dias de atraso.")
-        sugestoes.append("Suspender novas vendas até regularização.")
-        if atraso_atual > 30:
-            sugestoes.append("Encaminhar para departamento de cobrança jurídica.")
-
-    # 3. Fator Histórico de Atraso (Peso Médio)
-    if maior_atraso > 0:
-        # Penaliza histórico, mas menos que atraso atual
-        score -= (maior_atraso * 2) 
-        if maior_atraso > 10:
-            tendencias.append(f"Histórico de pagamentos instável (Maior atraso: {maior_atraso} dias).")
-
-    # 4. Fator Utilização de Limite
-    utilizacao = (debito / limite * 100) if limite > 0 else 0
-    if utilizacao > 95:
-        score -= 150
-        tendencias.append("Limite de crédito tomado quase totalmente.")
-        sugestoes.append("Não autorizar aumento de limite no momento.")
-    elif utilizacao > 80:
-        score -= 50
-
-    # 5. Fator Tempo de Casa (Fidelidade)
-    if data_cadastro:
-        if isinstance(data_cadastro, str):
-            # Tenta converter se vier string
-            try: data_cadastro = datetime.strptime(data_cadastro, '%Y-%m-%d')
-            except: pass
-            
-        if isinstance(data_cadastro, (datetime, date)):
-            dias_cliente = (datetime.now() - pd.to_datetime(data_cadastro)).days
-            if dias_cliente < 90:
-                score = min(score, 600) # Teto para clientes novos
-                tendencias.append("Cliente novo (menos de 3 meses). Histórico insuficiente.")
-            elif dias_cliente > 730: # 2 anos
-                score += 50 # Bônus fidelidade
-
-    # Normalização final do Score (0 a 1000)
-    score = max(0, min(1000, int(score)))
-
-    # Definição da Classificação
-    if score >= 800:
-        cor = "risco-baixo"
-        classificacao = "Baixo Risco"
-        if utilizacao < 50:
-            sugestoes.append("Cliente elegível para aumento de limite.")
-    elif score >= 500:
-        cor = "risco-moderado"
-        classificacao = "Risco Médio"
-        sugestoes.append("Vendas a prazo permitidas com cautela.")
-    else:
-        cor = "risco-alto"
-        classificacao = "Alto Risco"
-        sugestoes.append("Sugerido venda somente à vista ou cartão.")
-
-    return score, cor, classificacao, sugestoes, tendencias
-
-# =====================================================
-# ROTAS DA APLICAÇÃO
-# =====================================================
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return redirect(url_for('buscar_produto'))
 
-@app.route('/clientes')
-def clientes():
-    conn = conectar_sql_server()
-    if not conn:
-        return jsonify([])
+@app.route('/conexao', methods=['GET', 'POST'])
+def conexao():
+    config = carregar_config()
+    if request.method == 'POST':
+        config['database'] = {k: request.form.get(k) for k in ['server', 'database', 'username', 'password']}
+        with open(CONFIG_FILE, 'w') as f: json.dump(config, f, indent=4)
+        return redirect(url_for('buscar_produto'))
+    return render_template('conexao.html', config=config.get('database', {}))
 
-    try:
-        # Selecionamos apenas colunas necessárias para a grade para performance
-        cols = [
-            "Codigo", "Razao_Social", "Fantasia", "Cgc_Cpf", 
-            "Limite_Credito", "Total_Debito", "Atraso_Atual", 
-            "Maior_Atraso", "Bloqueado", "Data_Cadastro"
-        ]
-        query = f"SELECT {', '.join(cols)} FROM clien"
-        df = pd.read_sql(query, conn)
-        
-        data = []
-        for _, row in df.iterrows():
-            # Cálculo simplificado para a tabela (cache ou on-the-fly)
-            score_val, cor, classif, _, _ = calcular_risco_cliente(row)
-            
-            item = {
-                "Codigo": json_safe(row['Codigo']),
-                "Razao_Social": json_safe(row['Razao_Social']),
-                "Limite_Credito": json_safe(row['Limite_Credito']),
-                "Total_Debito": json_safe(row['Total_Debito']),
-                "Atraso_Atual": json_safe(row['Atraso_Atual']),
-                "score": score_val,
-                "classificacao": classif,
-                "cor": cor.replace('risco-', '') # Remove prefixo para o template class
-            }
-            data.append(item)
-
-        return jsonify(data)
-    except Exception as e:
-        print(f"Erro em /clientes: {e}")
-        return jsonify([])
-    finally:
-        conn.close()
-
-@app.route('/dashboard')
-def dashboard():
-    conn = conectar_sql_server()
-    if not conn:
-        return jsonify({"error": "Falha conexao"})
-
-    try:
-        # Queries agregadas no SQL são mais rápidas que processar Pandas
+@app.route('/buscar', methods=['GET', 'POST'])
+def buscar_produto():
+    conn = conectar_banco()
+    if not conn: return redirect(url_for('conexao'))
+    resultados = []
+    termo = request.form.get('termo_busca', '').strip() if request.method == 'POST' else ""
+    if termo:
+        cursor = conn.cursor()
         query = """
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN Bloqueado = 1 THEN 1 ELSE 0 END) as bloqueados,
-                AVG(CASE WHEN Limite_Credito > 0 THEN (Total_Debito/Limite_Credito)*100 ELSE 0 END) as uso_medio
-            FROM clien
+        SELECT DISTINCT 
+            p.Codigo, 
+            p.Descricao, 
+            p.Cod_EAN,
+            (SELECT ISNULL(SUM(Qtd_Fisico), 0) FROM PRLTL WHERE Cod_Produt = p.Codigo AND Cod_Estabe = 0) +
+            (SELECT ISNULL(SUM(Qtd_Fisico), 0) FROM PRLOT WHERE Cod_Produt = p.Codigo AND Cod_Estabe = 0) as Qtd_Total,
+            ISNULL((
+                SELECT TOP 1 Loc_Fis FROM (
+                    SELECT dbo.FN_FormataEndereco(Num_Rua, Num_Col, Num_Niv, Num_Apt) as Loc_Fis, Qtd_Fisico 
+                    FROM PRLTL WHERE Cod_Produt = p.Codigo AND Cod_Estabe = 0
+                    UNION ALL
+                    SELECT d.Cod_LocFis as Loc_Fis, fr.Qtd_Fisico 
+                    FROM PRLOT fr 
+                    INNER JOIN DPXPR d ON (fr.Cod_Estabe = d.Cod_Estabe AND fr.Cod_Dep = d.Cod_Dep AND fr.Cod_Produt = d.Cod_Produt)
+                    WHERE fr.Cod_Produt = p.Codigo AND fr.Cod_Estabe = 0
+                ) as Locais WHERE Qtd_Fisico > 0
+            ), '-') as Local_Fisico
+        FROM PRODU p 
+        WHERE CAST(p.Codigo AS VARCHAR) LIKE ? OR p.Cod_EAN LIKE ? OR p.Descricao LIKE ? 
+        ORDER BY p.Descricao
         """
-        df_stats = pd.read_sql(query, conn)
-        
-        # Para calcular a média de score, precisamos iterar (ou criar uma func no SQL)
-        # Faremos uma amostragem ou cálculo simplificado aqui
-        df_all = pd.read_sql("SELECT Limite_Credito, Total_Debito, Atraso_Atual, Maior_Atraso, Bloqueado, Data_Cadastro FROM clien", conn)
-        scores = []
-        classificacoes_count = {"Baixo Risco": 0, "Risco Médio": 0, "Alto Risco": 0, "Bloqueado": 0}
-        
-        top_clientes = []
+        cursor.execute(query, f'%{termo}%', f'%{termo}%', f'%{termo}%')
+        resultados = [dict(zip([c[0] for c in cursor.description], r)) for r in cursor.fetchall()]
+    conn.close()
+    return render_template('buscar_produto.html', resultados=resultados, termo_busca=termo)
 
-        for _, row in df_all.iterrows():
-            s, _, c, _, _ = calcular_risco_cliente(row)
-            scores.append(s)
-            
-            # Contagem para o gráfico
-            if c == "Baixo Risco": classificacoes_count["Baixo Risco"] += 1
-            elif c == "Risco Médio": classificacoes_count["Risco Médio"] += 1
-            elif c == "Alto Risco": classificacoes_count["Alto Risco"] += 1
-            else: classificacoes_count["Bloqueado"] += 1
-
-        # Identificar Top Clientes (simulação simples baseada em quem tem mais crédito e bom score)
-        # Em produção, faríamos sorting adequado
-        media_score = int(sum(scores) / len(scores)) if scores else 0
-        
-        return jsonify({
-            "total_clientes": int(df_stats.iloc[0]['total']),
-            "clientes_bloqueados": int(df_stats.iloc[0]['bloqueados']),
-            "media_score": media_score,
-            "media_utilizacao": round(float(df_stats.iloc[0]['uso_medio']), 1),
-            "classificacoes": classificacoes_count,
-            "top_clientes": [] # Pode implementar lógica de top 5 aqui se desejar
-        })
-    except Exception as e:
-        print(f"Erro dashboard: {e}")
-        return jsonify({"error": str(e)})
-    finally:
-        conn.close()
-
-@app.route('/analise/<int:codigo>')
-def analise_detalhada(codigo):
-    conn = conectar_sql_server()
-    if not conn: return jsonify({"error": "Sem conexão"})
-
+@app.route('/produto/<int:codigo>', methods=['GET', 'POST'])
+def detalhes_produto(codigo):
+    conn = conectar_banco()
+    if not conn: return redirect(url_for('conexao'))
     try:
-        # Pega TUDO do cliente para análise profunda
-        query = f"SELECT * FROM clien WHERE Codigo = {codigo}"
-        df = pd.read_sql(query, conn)
-
-        if df.empty:
-            return jsonify({"error": "Cliente não encontrado"})
-
-        row = df.iloc[0]
-        score, cor, classificacao, sugestoes, tendencias = calcular_risco_cliente(row)
+        cursor = conn.cursor()
         
-        # Dados Financeiros Calculados
-        limite = float(row['Limite_Credito'] or 0)
-        debito = float(row['Total_Debito'] or 0)
-        utilizacao = round((debito / limite * 100), 2) if limite > 0 else 0
-        
-        limite_sugerido = "Manter Atual"
-        if score > 850: limite_sugerido = f"R$ {limite * 1.20:,.2f}"
-        if score < 400: limite_sugerido = "Reduzir ou Bloquear"
+        query_prod = """
+        SELECT pc.Cod_Produt, pr.Descricao, fa.Fantasia, pr.Unidade_Venda, pr.Cod_EAN,
+        Prc_Venda_V = CASE WHEN ROUND(pc.Prc_Promoc * 100, 2) > 0 THEN
+            CASE WHEN ROUND(pc.Per_Descon * 100, 2) > 0 THEN ROUND(pc.Prc_Promoc * (1 - pc.Per_Descon / 100), 2)
+                 WHEN ROUND(pl.Per_AcrAutPrc * 100, 2) > 0 THEN ROUND(pc.Prc_Promoc * (1 + pl.Per_AcrAutPrc / 100), 2)
+                 WHEN ROUND(pl.Per_DscAutPrc * 100, 2) > 0 THEN ROUND(pc.Prc_Promoc * (1 - pl.Per_DscAutPrc / 100), 2)
+                 ELSE pc.Prc_Promoc END
+        ELSE
+            CASE WHEN ROUND(px.Prc_Venda * 100, 2) > 0 AND ROUND(pc.Per_Descon * 100, 2) > 0 THEN ROUND(px.Prc_Venda * (1 - pc.Per_Descon / 100), 2)
+                 WHEN ROUND(pl.Per_AcrAutPrc * 100, 2) > 0 THEN ROUND(px.Prc_Venda * (1 + pl.Per_AcrAutPrc / 100), 2)
+                 WHEN ROUND(pl.Per_DscAutPrc * 100, 2) > 0 THEN ROUND(px.Prc_Venda * (1 - pl.Per_DscAutPrc / 100), 2)
+                 ELSE ISNULL(px.Prc_Venda, 0) END END
+        FROM PCXPR pc INNER JOIN PRODU pr ON pc.Cod_Produt = pr.Codigo INNER JOIN PRXAP pa ON pc.Cod_Produt = pa.Cod_Produt AND pa.Flg_Padrao = 1
+        INNER JOIN FABRI fa ON pr.Cod_Fabricante = fa.Codigo LEFT JOIN PRXES px ON pc.Cod_Produt = px.Cod_Produt AND px.Cod_Estabe = 0
+        INNER JOIN POCOM pl ON pc.Id_PolCom = pl.Id_PolCom WHERE pc.Cod_Produt = ? AND pc.Id_PolCom = 432
+        """
+        cursor.execute(query_prod, codigo)
+        res = cursor.fetchone()
+        if not res: return "Produto sem precificação na política 432", 404
+        produto = {'codigo': res[0], 'descricao': res[1], 'fabricante': res[2], 'unidade': res[3], 'cod_ean': res[4], 'preco': res[5]}
 
-        response = {
-            "cliente": {k: json_safe(v) for k, v in row.items()},
-            "score": score,
-            "cor_risco": cor,
-            "classificacao_risco": classificacao,
-            "limite_sugerido": limite_sugerido,
-            "indicadores": {
-                "utilizacao_limite": utilizacao,
-                "dias_atraso_atual": int(row['Atraso_Atual'] or 0),
-                "maior_atraso_historico": int(row['Maior_Atraso'] or 0),
-                "media_atraso": int(row['Atraso_MedAtu'] or 0)
-            },
-            "tendencias_pagamento": tendencias,
-            "sugestoes": sugestoes,
-            "data_analise": datetime.now().strftime("%d/%m/%Y %H:%M")
-        }
-        
-        return jsonify(response)
+        query_est = """
+        SELECT 
+            dp.Cod_Lote, dp.Dat_Vencim, dp.Qtd_Fisico, dp.Cod_Dep AS Deposito, 
+            Loc_Fis = dbo.FN_FormataEndereco(dp.Num_Rua, dp.Num_Col, dp.Num_Niv, dp.Num_Apt),
+            'Fisico' as Origem 
+        FROM PRLTL dp 
+        WHERE dp.Cod_Estabe = 0 AND dp.Cod_Produt = ? AND dp.Qtd_Fisico > 0
+        UNION ALL
+        SELECT 
+            fr.Cod_Lote, fr.Dat_Vencim, fr.Qtd_Fisico, fr.Cod_Dep AS Deposito, 
+            Loc_Fis = d.Cod_LocFis,
+            'Lote' as Origem 
+        FROM PRLOT fr 
+        INNER JOIN DPXPR d ON (fr.Cod_Estabe = d.Cod_Estabe AND fr.Cod_Dep = d.Cod_Dep AND fr.Cod_Produt = d.Cod_Produt)
+        WHERE fr.Cod_Estabe = 0 AND fr.Cod_Produt = ? AND fr.Qtd_Fisico > 0
+        """
+        cursor.execute(query_est, codigo, codigo)
+        estoque = [dict(zip([c[0] for c in cursor.description], r)) for r in cursor.fetchall()]
 
-    except Exception as e:
-        print(f"Erro na análise detalhada: {e}")
-        return jsonify({"error": str(e)})
-    finally:
+        d_fim = datetime.now()
+        d_ini = d_fim - timedelta(days=90)
+        if request.method == 'POST':
+            try: d_ini = datetime.strptime(request.form.get('data_inicio'), '%Y-%m-%d')
+            except: pass
+            try: d_fim = datetime.strptime(request.form.get('data_fim'), '%Y-%m-%d')
+            except: pass
+
+        query_nf = """
+        SELECT it.Dat_Movimento, cb.Numero, cb.Tip_NF, it.Cod_Lote, (it.Qtd_Pedido + it.Qtd_Bonificacao) as Total,
+        Emitente = (SELECT Razao_Social FROM FORNE WHERE Codigo = cb.Cod_EmiFornec)
+        FROM NFECB cb INNER JOIN NFEIT it ON cb.Protocolo = it.Protocolo
+        WHERE cb.Status = 'F' AND it.Cod_Produto = ? AND it.Dat_Movimento BETWEEN ? AND ? AND cb.Tip_NF = 'C'
+        ORDER BY it.Dat_Movimento DESC
+        """
+        cursor.execute(query_nf, codigo, d_ini.strftime('%Y%m%d'), d_fim.strftime('%Y%m%d 23:59'))
+        entradas = [dict(zip([c[0] for c in cursor.description], r)) for r in cursor.fetchall()]
+
         conn.close()
+        return render_template('resultado_produto.html', produto=produto, estoque=estoque, entradas=entradas,
+                               data_inicio=d_ini.strftime('%Y-%m-%d'), data_fim=d_fim.strftime('%Y-%m-%d'),
+                               data_atual=datetime.now())
+    except Exception as e:
+        return f"Erro: {str(e)}", 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5001)
