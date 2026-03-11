@@ -1,0 +1,8 @@
+{
+    "database": {
+        "server": "10.10.0.5",
+        "database": "DMD",
+        "username": "sa",
+        "password": "GPfr46zzcso1$@"
+    }
+}

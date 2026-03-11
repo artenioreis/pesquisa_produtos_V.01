@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalhes Logísticos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f4f7f6;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .container {
+            max-width: 1150px;
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .product-header {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .price-box {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: right;
+            border: 1px solid #c8e6c9;
+        }
+
+        .price-val {
+            color: #2e7d32;
+            font-size: 32px;
+            font-weight: 800;
+            display: block;
+        }
+
+        .section-title {
+            font-size: 18px;
+            color: #003d82;
+            font-weight: 700;
+            border-left: 5px solid #003d82;
+            padding-left: 10px;
+            margin: 30px 0 15px 0;
+        }
+
+        .table {
+            font-size: 13px;
+        }
+
+        .vencido {
+            color: #d32f2f;
+            font-weight: bold;
+            background: #ffebee;
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        .local-fisico {
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            color: #003d82;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="{{ url_for('buscar_produto') }}" class="btn btn-outline-secondary mb-4">← Voltar para Busca</a>
+
+        <div class="product-header">
+            <div class="row align-items-center">
+                <div class="col-md-7">
+                    <h1 class="h3 mb-1">{{ produto.descricao }}</h1>
+                    <p class="text-muted mb-3">Fabricante: <strong>{{ produto.fabricante }}</strong> | Unidade:
+                        <strong>{{ produto.unidade }}</strong></p>
+                    <div class="row text-secondary">
+                        <div class="col-auto small">CÓDIGO: <strong>{{ produto.codigo }}</strong></div>
+                        <div class="col-auto small">EAN: <strong>{{ produto.cod_ean or '-' }}</strong></div>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <div class="price-box">
+                        <small class="text-success fw-bold">PREÇO DE VENDA (POL. 432)</small>
+                        <span class="price-val">R$ {{ "%.2f"|format(produto.preco)|replace('.', ',') }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section-title">Estoque Atual por Lote/Depósito</h2>
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Lote</th>
+                        <th>Vencimento</th>
+                        <th>Qtd. Física</th>
+                        <th>Depósito</th>
+                        <th>Local Físico</th>
+                        <th>Origem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in estoque %}
+                    <tr>
+                        <td><strong>{{ item.Cod_Lote or '-' }}</strong></td>
+                        <td>
+                            {% if item.Dat_Vencim %}
+                            <span class="{{ 'vencido' if item.Dat_Vencim < data_atual else '' }}">
+                                {{ item.Dat_Vencim.strftime('%d/%m/%Y') }}
+                            </span>
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>{{ item.Qtd_Fisico|int }}</td>
+                        <td>{{ item.Deposito }}</td>
+                        <td class="local-fisico">{{ item.Loc_Fis or '-' }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ item.Origem }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h2 class="section-title">Últimas Entradas de Notas Fiscais</h2>
+        <div class="card bg-light mb-3">
+            <div class="card-body">
+                <form method="POST" class="row g-2 align-items-end">
+                    <div class="col-md-4"><label class="small fw-bold">Data Início</label><input type="date"
+                            name="data_inicio" class="form-control form-control-sm" value="{{ data_inicio }}"></div>
+                    <div class="col-md-4"><label class="small fw-bold">Data Fim</label><input type="date"
+                            name="data_fim" class="form-control form-control-sm" value="{{ data_fim }}"></div>
+                    <div class="col-md-4"><button type="submit" class="btn btn-primary btn-sm w-100">Filtrar
+                            Entradas</button></div>
+                </form>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-striped border">
+                <thead class="table-secondary">
+                    <tr>
+                        <th>Data</th>
+                        <th>Número NF</th>
+                        <th>Tipo</th>
+                        <th>Emitente</th>
+                        <th>Qtd Total</th>
+                        <th>Lote</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for nf in entradas %}
+                    <tr>
+                        <td>{{ nf.Dat_Movimento.strftime('%d/%m/%Y') }}</td>
+                        <td>{{ nf.Numero }}</td>
+                        <td>{{ 'Compra' if nf.Tip_NF == 'C' else nf.Tip_NF }}</td>
+                        <td>{{ nf.Emitente }}</td>
+                        <td>{{ nf.Total|int }}</td>
+                        <td>{{ nf.Cod_Lote or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+
+</html>

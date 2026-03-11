@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Busca de Produtos Artenio Reis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding-top: 20px;
+            padding-bottom: 50px;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .logo-container {
+            text-align: center;
+            margin-bottom: 40px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        .logo {
+            max-width: 400px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+        .logo-fallback {
+            font-size: 2.5em;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .search-box {
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+        .search-box h4 {
+            color: #333;
+            margin-bottom: 25px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .product-card {
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .product-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            background-color: rgba(102, 126, 234, 0.05);
+        }
+        .back-btn {
+            margin-bottom: 20px;
+        }
+        .search-info {
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 15px;
+            text-align: center;
+        }
+        .search-input {
+            font-size: 1.1em;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            transition: border-color 0.3s;
+        }
+        .search-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 12px 30px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        .results-container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+        .results-container h5 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .table {
+            margin-bottom: 0;
+        }
+        .table thead {
+            background-color: #f8f9fa;
+        }
+        .table-hover tbody tr:hover {
+            background-color: rgba(102, 126, 234, 0.1);
+        }
+        .alert {
+            border-radius: 10px;
+            border: none;
+            margin-top: 20px;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            border: none;
+            padding: 8px 15px;
+        }
+        .btn-secondary:hover {
+            background-color: #5a6268;
+            transform: translateY(-2px);
+        }
+        .btn-info {
+            background-color: #17a2b8;
+            border: none;
+        }
+        .btn-info:hover {
+            background-color: #138496;
+        }
+        .search-icon {
+            margin-right: 8px;
+        }
+
+        /* Estilos do Scanner */
+        .btn-scanner {
+            border: 2px solid #e0e0e0;
+            border-left: none;
+            background-color: #f8f9fa;
+            color: #667eea;
+            font-size: 1.4em;
+            padding: 0 15px;
+            border-top-right-radius: 10px;
+            border-bottom-right-radius: 10px;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            background-color: #000;
+        }
+        .scanner-container {
+            position: relative;
+            overflow: hidden;
+            min-height: 250px;
+        }
+        .scanner-laser {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: red;
+            box-shadow: 0 0 8px red;
+            z-index: 10;
+            transform: translateY(-50%);
+            animation: moveLaser 2s infinite ease-in-out;
+        }
+        @keyframes moveLaser {
+            0%, 100% { top: 20%; }
+            50% { top: 80%; }
+        }
+
+        @media (max-width: 768px) {
+            .logo-container { margin-bottom: 30px; padding: 15px; }
+            .logo { max-width: 250px; }
+            .search-box { padding: 20px; }
+            .results-container { padding: 20px; }
+            .table-responsive { font-size: 0.9em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='logo.png') }}" 
+                 alt="Logo da Empresa" 
+                 class="logo"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+            <div class="logo-fallback" style="display: none;">
+                <i class="bi bi-shop"></i> Varejão Farma V.01
+            </div>
+        </div>
+
+        <div class="back-btn">
+            <a href="{{ url_for('conexao') }}" class="btn btn-secondary">
+                <i class="bi bi-gear"></i> Configurações 
+            </a>
+        </div>
+
+        <div class="search-box">
+            <h4>🔍 Buscar Produto V.01</h4>
+            <form method="POST" id="searchForm" class="row g-3">
+                <div class="col-md-10">
+                    <div class="input-group">
+                        <input type="text" 
+                               class="form-control search-input" 
+                               id="termo_busca"
+                               name="termo_busca" 
+                               value="{{ termo_busca }}" 
+                               placeholder="Digite código, EAN ou nome..." 
+                               required 
+                               autofocus
+                               style="border-top-left-radius: 10px; border-bottom-left-radius: 10px;">
+                        <button type="button" class="btn btn-scanner" data-bs-toggle="modal" data-bs-target="#scannerModal">
+                            <i class="bi bi-camera"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100" style="padding: 12px; border-radius: 10px;">
+                        <i class="bi bi-search search-icon"></i> Buscar
+                    </button>
+                </div>
+            </form>
+
+            <div class="search-info">
+                <small>
+                    <i class="bi bi-info-circle"></i>
+                    Busca por: Código do Produto, Código de Barras (EAN) ou Nome
+                </small>
+            </div>
+        </div>
+
+        {% if resultados %}
+        <div class="results-container">
+            <h5><i class="bi bi-list-check"></i> Resultados ({{ resultados|length }})</h5>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Código</th>
+                            <th>Descrição</th>
+                            <th>Código EAN</th>
+                            <th style="text-align: center;">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for produto in resultados %}
+                        <tr class="product-card" onclick="window.location.href='{{ url_for('detalhes_produto', codigo=produto.Codigo) }}'">
+                            <td><strong>{{ produto.Codigo }}</strong></td>
+                            <td>{{ produto.Descricao }}</td>
+                            <td><code>{{ produto.Cod_EAN or '-' }}</code></td>
+                            <td style="text-align: center;">
+                                <a href="{{ url_for('detalhes_produto', codigo=produto.Codigo) }}" class="btn btn-sm btn-info text-white">
+                                   <i class="bi bi-eye"></i> Detalhes
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% elif termo_busca %}
+        <div class="alert alert-warning">Nenhum resultado encontrado para "{{ termo_busca }}".</div>
+        {% endif %}
+    </div>
+
+    <div class="modal fade" id="scannerModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Escanear Código de Barras</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" id="btnFecharScanner"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="scanner-container">
+                        <div class="scanner-laser"></div>
+                        <video id="video" autoplay muted playsinline></video>
+                    </div>
+                    <div id="sourceSelectPanel" style="display:none; margin-top: 10px;">
+                        <select id="sourceSelect" class="form-select form-select-sm"></select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        const scannerModal = document.getElementById('scannerModal');
+        let selectedDeviceId;
+
+        scannerModal.addEventListener('shown.bs.modal', function () {
+            codeReader.listVideoInputDevices()
+                .then((videoInputDevices) => {
+                    const sourceSelect = document.getElementById('sourceSelect');
+                    
+                    // Prioriza a câmera traseira se houver mais de uma
+                    selectedDeviceId = videoInputDevices[0].deviceId;
+                    if (videoInputDevices.length > 1) {
+                        videoInputDevices.forEach((device) => {
+                            const label = device.label.toLowerCase();
+                            if (label.includes('back') || label.includes('traseira') || label.includes('rear')) {
+                                selectedDeviceId = device.deviceId;
+                            }
+                        });
+                        
+                        // Opcional: Mostra seletor se houver múltiplas câmeras
+                        sourceSelect.innerHTML = '';
+                        videoInputDevices.forEach((device) => {
+                            const sourceOption = document.createElement('option');
+                            sourceOption.text = device.label;
+                            sourceOption.value = device.deviceId;
+                            if(device.deviceId === selectedDeviceId) sourceOption.selected = true;
+                            sourceSelect.appendChild(sourceOption);
+                        });
+                        document.getElementById('sourceSelectPanel').style.display = 'block';
+                        
+                        sourceSelect.onchange = () => {
+                            selectedDeviceId = sourceSelect.value;
+                            codeReader.reset();
+                            startScanning();
+                        };
+                    }
+
+                    startScanning();
+                })
+                .catch((err) => {
+                    console.error("Erro ao listar câmeras:", err);
+                    alert("Não foi possível acessar a câmera. Verifique se o site está em HTTPS.");
+                });
+        });
+
+        function startScanning() {
+            codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
+                if (result) {
+                    document.getElementById('termo_busca').value = result.text;
+                    stopScanner();
+                    bootstrap.Modal.getInstance(scannerModal).hide();
+                    document.getElementById('searchForm').submit();
+                }
+                if (err && !(err instanceof ZXing.NotFoundException)) {
+                    console.error("Erro na leitura:", err);
+                }
+            });
+        }
+
+        function stopScanner() {
+            codeReader.reset();
+            document.getElementById('sourceSelectPanel').style.display = 'none';
+        }
+
+        scannerModal.addEventListener('hidden.bs.modal', stopScanner);
+        document.getElementById('btnFecharScanner').addEventListener('click', stopScanner);
+    </script>
+</body>
+</html>

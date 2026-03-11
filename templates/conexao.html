@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuração de Conexão</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 50px;
+        }
+        .container {
+            max-width: 600px;
+        }
+        .card {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .btn-test {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Configuração de Conexão com Banco de Dados</h4>
+            </div>
+            <div class="card-body">
+                {% if mensagem %}
+                <div class="alert alert-{{ 'success' if tipo_mensagem == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+                    {{ mensagem }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+
+                <form method="POST" id="formConexao">
+                    <div class="mb-3">
+                        <label for="server" class="form-label">Servidor SQL Server:</label>
+                        <input type="text" class="form-control" id="server" name="server" 
+                               value="{{ config.server or '' }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="database" class="form-label">Nome do Banco de Dados:</label>
+                        <input type="text" class="form-control" id="database" name="database" 
+                               value="{{ config.database or '' }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Usuário:</label>
+                        <input type="text" class="form-control" id="username" name="username" 
+                               value="{{ config.username or '' }}" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Senha:</label>
+                        <input type="password" class="form-control" id="password" name="password" 
+                               value="{{ config.password or '' }}" required>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-info btn-test" id="btnTestar">
+                            Testar Conexão
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            Salvar Configurações
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('btnTestar').addEventListener('click', function() {
+            const formData = {
+                server: document.getElementById('server').value,
+                database: document.getElementById('database').value,
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            };
+
+            fetch('/api/testar_conexao', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                } else {
+                    alert('❌ ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Erro ao testar conexão: ' + error);
+            });
+        });
+    </script>
+</body>
+</html>
